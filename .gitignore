@@ -2,28 +2,27 @@
 # Database
 ngo_platform.db
 
-# Dependencies
-venv/
-.venv/
+# Python
 __pycache__/
 *.pyc
-.pytest_cache/
-.mypy_cache/
-
-# Logs and temp files
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.ENV
+.python-version
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
 *.log
-*.tmp
-
-# Environment
-.env
-.env.local
-*.env.*
-
-# Editors
-.vscode/
-.idea/
-
-# OS
+.git/modules/
 .DS_Store
-Thumbs.db
 ```

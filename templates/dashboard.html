@@ -122,6 +122,12 @@
         <a href="/issues" class="sidebar-link">
             <i class="bi bi-exclamation-triangle"></i> Issues
         </a>
+        {% if is_super_admin %}
+        <hr style="border-color: rgba(255,255,255,0.2); margin: 1rem 0;">
+        <a href="#" class="sidebar-link text-warning" onclick="showSuperAdminPanel()">
+            <i class="bi bi-shield-lock"></i> Super Admin Panel
+        </a>
+        {% endif %}
         <hr style="border-color: rgba(255,255,255,0.2); margin: 1rem 0;">
         <a href="/settings" class="sidebar-link">
             <i class="bi bi-gear"></i> Settings
@@ -357,6 +363,178 @@
             if (!dateStr) return 'N/A';
             const date = new Date(dateStr);
             return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function showSuperAdminPanel() {
+            // Show NGO management modal for super admin
+            const modalHtml = `
+                <div class="modal fade" id="superAdminModal" tabindex="-1">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header bg-warning">
+                                <h5 class="modal-title"><i class="bi bi-shield-lock"></i> Super Admin - NGO Management</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="card mb-3">
+                                    <div class="card-header">Create New NGO</div>
+                                    <div class="card-body">
+                                        <form id="createNgoForm">
+                                            <div class="row">
+                                                <div class="col-md-6 mb-2">
+                                                    <input type="text" class="form-control" id="ngoName" placeholder="NGO Name" required>
+                                                </div>
+                                                <div class="col-md-6 mb-2">
+                                                    <input type="email" class="form-control" id="ngoEmail" placeholder="Email" required>
+                                                </div>
+                                                <div class="col-md-6 mb-2">
+                                                    <input type="text" class="form-control" id="ngoPhone" placeholder="Phone">
+                                                </div>
+                                                <div class="col-md-6 mb-2">
+                                                    <select class="form-select" id="ngoPlan">
+                                                        <option value="basic">Basic Plan</option>
+                                                        <option value="premium">Premium Plan</option>
+                                                        <option value="enterprise">Enterprise Plan</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-12 mb-2">
+                                                    <textarea class="form-control" id="ngoDescription" placeholder="Description" rows="2"></textarea>
+                                                </div>
+                                                <div class="col-12 mb-2">
+                                                    <textarea class="form-control" id="ngoAddress" placeholder="Address" rows="2"></textarea>
+                                                </div>
+                                                <div class="col-12 mb-2">
+                                                    <input type="url" class="form-control" id="ngoWebsite" placeholder="Website URL">
+                                                </div>
+                                            </div>
+                                            <button type="submit" class="btn btn-warning mt-2">Create NGO</button>
+                                        </form>
+                                    </div>
+                                </div>
+                                <div class="card">
+                                    <div class="card-header">Existing NGOs</div>
+                                    <div class="card-body">
+                                        <div id="ngoList">Loading...</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            const modal = new bootstrap.Modal(document.getElementById('superAdminModal'));
+            modal.show();
+            
+            // Load NGOs list
+            loadNGOs();
+            
+            // Handle form submission
+            document.getElementById('createNgoForm').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const token = localStorage.getItem('access_token');
+                
+                const ngoData = {
+                    name: document.getElementById('ngoName').value,
+                    email: document.getElementById('ngoEmail').value,
+                    phone: document.getElementById('ngoPhone').value || null,
+                    subscription_plan: document.getElementById('ngoPlan').value,
+                    description: document.getElementById('ngoDescription').value || null,
+                    address: document.getElementById('ngoAddress').value || null,
+                    website: document.getElementById('ngoWebsite').value || null
+                };
+                
+                try {
+                    const response = await fetch('/api/admin/create-ngo', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': \`Bearer \${token}\`
+                        },
+                        body: JSON.stringify(ngoData)
+                    });
+                    
+                    if (response.ok) {
+                        alert('NGO created successfully!');
+                        document.getElementById('createNgoForm').reset();
+                        loadNGOs();
+                    } else {
+                        const error = await response.json();
+                        alert('Error: ' + (error.detail || 'Failed to create NGO'));
+                    }
+                } catch (error) {
+                    alert('Connection error: ' + error.message);
+                }
+            });
+            
+            // Remove modal on close
+            document.getElementById('superAdminModal').addEventListener('hidden.bs.modal', function() {
+                this.remove();
+            });
+        }
+        
+        async function loadNGOs() {
+            const token = localStorage.getItem('access_token');
+            try {
+                const response = await fetch('/api/admin/list-ngos', {
+                    headers: {
+                        'Authorization': \`Bearer \${token}\`
+                    }
+                });
+                
+                if (response.ok) {
+                    const ngos = await response.json();
+                    const ngoList = document.getElementById('ngoList');
+                    
+                    if (ngos.length === 0) {
+                        ngoList.innerHTML = '<p class="text-muted">No NGOs found.</p>';
+                    } else {
+                        let html = '<table class="table table-hover"><thead><tr><th>Name</th><th>Email</th><th>Plan</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+                        ngos.forEach(ngo => {
+                            html += \`<tr>
+                                <td>\${ngo.name}</td>
+                                <td>\${ngo.email}</td>
+                                <td><span class="badge bg-info">\${ngo.subscription_plan}</span></td>
+                                <td><span class="badge bg-success">\${ngo.status}</span></td>
+                                <td><button class="btn btn-sm btn-danger" onclick="deleteNgo(\${ngo.id})">Delete</button></td>
+                            </tr>\`;
+                        });
+                        html += '</tbody></table>';
+                        ngoList.innerHTML = html;
+                    }
+                } else {
+                    document.getElementById('ngoList').innerHTML = '<p class="text-danger">Failed to load NGOs.</p>';
+                }
+            } catch (error) {
+                document.getElementById('ngoList').innerHTML = '<p class="text-danger">Error loading NGOs.</p>';
+            }
+        }
+        
+        async function deleteNgo(ngoId) {
+            if (!confirm('Are you sure you want to delete this NGO? This action cannot be undone.')) {
+                return;
+            }
+            
+            const token = localStorage.getItem('access_token');
+            try {
+                const response = await fetch(\`/api/admin/delete-ngo/\${ngoId}\`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': \`Bearer \${token}\`
+                    }
+                });
+                
+                if (response.ok) {
+                    alert('NGO deleted successfully!');
+                    loadNGOs();
+                } else {
+                    const error = await response.json();
+                    alert('Error: ' + (error.detail || 'Failed to delete NGO'));
+                }
+            } catch (error) {
+                alert('Connection error: ' + error.message);
+            }
         }
 
         function logout() {

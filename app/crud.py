@@ -364,3 +364,31 @@ def update_referral(
 
 def delete_referral(db: Session, referral_id: int) -> bool:
     return delete_db_obj(db, models.Referral, referral_id)
+
+
+# ============== NGO CRUD Operations ==============
+
+def get_ngos(db: Session, skip: int = 0, limit: int = 100) -> List[models.NGO]:
+    return get_db_objs(db, models.NGO, skip, limit)
+
+
+def get_ngo(db: Session, ngo_id: int) -> Optional[models.NGO]:
+    return get_db_obj(db, models.NGO, ngo_id)
+
+
+def get_ngo_by_email(db: Session, email: str) -> Optional[models.NGO]:
+    return db.query(models.NGO).filter(models.NGO.email == email).first()
+
+
+def create_ngo(db: Session, ngo: schemas.NGOCreate) -> models.NGO:
+    return create_db_obj(db, models.NGO, ngo)
+
+
+def update_ngo(
+    db: Session, ngo_id: int, ngo_update: schemas.NGOUpdate
+) -> Optional[models.NGO]:
+    return update_db_obj(db, models.NGO, ngo_id, ngo_update)
+
+
+def delete_ngo(db: Session, ngo_id: int) -> bool:
+    return delete_db_obj(db, models.NGO, ngo_id)
