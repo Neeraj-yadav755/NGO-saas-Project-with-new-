@@ -11,6 +11,7 @@ from .database import Base
 
 
 class RoleEnum(str, enum.Enum):
+    SUPER_ADMIN = "super_admin"
     ADMIN = "admin"
     MANAGER = "manager"
     COORDINATOR = "coordinator"
@@ -257,3 +258,33 @@ class Referral(Base):
     # Relationships
     referrer = relationship("Member", back_populates="referrals_made", foreign_keys=[referrer_id])
     referred_member = relationship("Member", back_populates="referrals_received", foreign_keys=[referred_member_id])
+
+
+class NGO(Base):
+    """NGO Tenant model for multi-tenant SaaS platform."""
+    __tablename__ = "ngos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    description = Column(Text)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    phone = Column(String(20))
+    address = Column(Text)
+    website = Column(String(255))
+    status = Column(Enum(StatusEnum), default=StatusEnum.ACTIVE)
+    subscription_plan = Column(String(50), default="basic")  # basic, premium, enterprise
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    users = relationship("User", back_populates="ngo")
+    members = relationship("Member", back_populates="ngo")
+
+
+# Add ngo_id foreign key to User model
+User.ngo_id = Column(Integer, ForeignKey("ngos.id"), nullable=True)
+User.ngo = relationship("NGO", back_populates="users")
+
+# Add ngo_id foreign key to Member model  
+Member.ngo_id = Column(Integer, ForeignKey("ngos.id"), nullable=True)
+Member.ngo = relationship("NGO", back_populates="members")

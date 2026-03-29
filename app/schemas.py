@@ -7,6 +7,7 @@ from enum import Enum
 
 
 class RoleEnum(str, Enum):
+    SUPER_ADMIN = "super_admin"
     ADMIN = "admin"
     MANAGER = "manager"
     COORDINATOR = "coordinator"
@@ -340,6 +341,40 @@ class ReferralResponse(ReferralBase):
     id: int
     referrer_id: Optional[int] = None
     referred_member_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# NGO schemas
+class NGOBase(BaseSchema):
+    name: str = Field(..., min_length=1, max_length=200)
+    description: Optional[str] = None
+    email: EmailStr
+    phone: Optional[str] = Field(None, max_length=20)
+    address: Optional[str] = None
+    website: Optional[str] = Field(None, max_length=255)
+    status: StatusEnum = StatusEnum.ACTIVE
+    subscription_plan: str = Field("basic", max_length=50)
+
+
+class NGOCreate(NGOBase):
+    pass
+
+
+class NGOUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    description: Optional[str] = None
+    phone: Optional[str] = Field(None, max_length=20)
+    address: Optional[str] = None
+    website: Optional[str] = None
+    status: Optional[StatusEnum] = None
+    subscription_plan: Optional[str] = None
+
+
+class NGOResponse(NGOBase):
+    id: int
     created_at: datetime
     updated_at: datetime
 

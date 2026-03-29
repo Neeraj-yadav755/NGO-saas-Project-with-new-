@@ -38,6 +38,25 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables created successfully.")
     
+    # Create super admin user if not exists
+    from sqlalchemy.orm import Session
+    db = Session(bind=engine)
+    try:
+        super_admin = crud.get_user_by_email(db, email="superadmin@ngo-saas.com")
+        if not super_admin:
+            demo_user = schemas.UserCreate(
+                name="Super Administrator",
+                email="superadmin@ngo-saas.com",
+                password="superadmin123",
+                role="super_admin"
+            )
+            crud.create_user(db=db, user=demo_user)
+            logger.info("Super admin user created: superadmin@ngo-saas.com")
+    except Exception as e:
+        logger.error(f"Error creating super admin: {e}")
+    finally:
+        db.close()
+    
     yield
     
     # Shutdown: Cleanup if needed
@@ -109,6 +128,63 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 
+def get_current_user_from_token(token: str, db: Session = Depends(get_db)) -> Optional[dict]:
+    """Decode JWT token and return user info."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        role: str = payload.get("role")
+        user_id: int = payload.get("user_id")
+        if email is None:
+            return None
+        return {"email": email, "role": role, "user_id": user_id}
+    except jwt.PyJWTError:
+        return None
+
+
+async def get_current_user(request: Request) -> Optional[dict]:
+    """Get current user from JWT token in cookie or header."""
+    # Try to get token from cookie first
+    token = request.cookies.get("access_token")
+    
+    # If not in cookie, try Authorization header
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+    
+    if not token:
+        return None
+    
+    db = next(get_db())
+    try:
+        user_info = get_current_user_from_token(token, db)
+        return user_info
+    finally:
+        db.close()
+
+
+def require_role(required_roles: list[str]):
+    """Dependency to check if user has required role."""
+    async def role_checker(request: Request, current_user: dict = Depends(get_current_user)):
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Not authenticated"
+            )
+        if current_user.get("role") not in required_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions"
+            )
+        return current_user
+    return role_checker
+
+
+# Dependency for super_admin only routes
+super_admin_required = Depends(require_role(["super_admin"]))
+
+
 @app.post("/api/auth/login", response_model=LoginResponse, tags=["Authentication"])
 async def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     """Authenticate user and return JWT token."""
@@ -143,14 +219,77 @@ async def login(login_data: LoginRequest, db: Session = Depends(get_db)):
             expires_delta=access_token_expires
         )
         
-        return LoginResponse(
+        # Create response with token in cookie
+        from fastapi.responses import JSONResponse
+        response = LoginResponse(
             access_token=access_token,
             user={"id": user.id, "email": user.email, "name": user.name, "role": user.role}
         )
+        
+        return response
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Login error: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+# ============== Super Admin Endpoints ==============
+
+@app.post("/api/admin/create-ngo", response_model=schemas.NGOResponse, status_code=status.HTTP_201_CREATED, tags=["Super Admin"])
+async def create_ngo(
+    ngo: schemas.NGOCreate, 
+    db: Session = Depends(get_db),
+    current_user: dict = super_admin_required
+):
+    """Create a new NGO tenant (Super Admin only)."""
+    try:
+        # Check if email already exists
+        existing_ngo = crud.get_ngo_by_email(db, email=ngo.email)
+        if existing_ngo:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+        return crud.create_ngo(db=db, ngo=ngo)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating NGO: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@app.get("/api/admin/list-ngos", response_model=list[schemas.NGOResponse], tags=["Super Admin"])
+async def list_ngos(
+    skip: int = 0, 
+    limit: int = 100, 
+    db: Session = Depends(get_db),
+    current_user: dict = super_admin_required
+):
+    """List all NGOs (Super Admin only)."""
+    try:
+        return crud.get_ngos(db=db, skip=skip, limit=limit)
+    except Exception as e:
+        logger.error(f"Error fetching NGOs: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@app.delete("/api/admin/delete-ngo/{ngo_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Super Admin"])
+async def delete_ngo(
+    ngo_id: int, 
+    db: Session = Depends(get_db),
+    current_user: dict = super_admin_required
+):
+    """Delete an NGO (Super Admin only)."""
+    try:
+        success = crud.delete_ngo(db=db, ngo_id=ngo_id)
+        if not success:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NGO not found")
+        return None
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting NGO: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
@@ -171,11 +310,23 @@ async def login_page(request: Request):
 @app.get("/dashboard", response_class=HTMLResponse, tags=["Frontend"])
 async def dashboard_page(request: Request):
     """Render dashboard page."""
+    current_user = await get_current_user(request)
+    user_name = "Admin"
+    user_role = "admin"
+    is_super_admin = False
+    
+    if current_user:
+        user_name = current_user.get("email", "Admin").split("@")[0]
+        user_role = current_user.get("role", "admin")
+        is_super_admin = user_role == "super_admin"
+    
     return templates.TemplateResponse(
         "dashboard.html",
         {
             "request": request,
-            "user_name": "Admin",
+            "user_name": user_name,
+            "user_role": user_role,
+            "is_super_admin": is_super_admin,
             "current_date": datetime.now().strftime("%B %d, %Y")
         }
     )
