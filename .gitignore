@@ -1,65 +1,29 @@
-```gitignore
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.py~
-*.pyc~
-*.pyo~
-*.pyd~
-*.py~
-
-# Databases
-*.db
+```
+# Database
 ngo_platform.db
-
-# Environment variables
-.env
-.env.local
-.env.*
 
 # Dependencies
 venv/
 .venv/
-env/
-.ENV/
-
-# Build and distribution artifacts
-build/
-dist/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Logs
-*.log
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-```
-
-Wait, let me reconsider. Looking at the changes again, I see there are `.pyc` files in `app/__pycache__/` directories which should be ignored, and a database file. Let me provide the correct `.gitignore`:
-
-```gitignore
-# Python cache
 __pycache__/
 *.pyc
+.pytest_cache/
+.mypy_cache/
 
-# Database
-*.db
-ngo_platform.db
-
-# Virtual environments
-venv/
-.venv/
-env/
-.ENV/
-
-# Logs
+# Logs and temp files
 *.log
+*.tmp
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
 ```

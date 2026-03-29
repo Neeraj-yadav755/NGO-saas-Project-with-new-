@@ -3,9 +3,15 @@
 import logging
 from contextlib import asynccontextmanager
 from typing import Optional
+from datetime import datetime, timedelta
 
-from fastapi import FastAPI, Depends, HTTPException, Query, status
+from fastapi import FastAPI, Depends, HTTPException, Query, status, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+import jwt
 from sqlalchemy.orm import Session
 
 from .database import engine, get_db, Base
@@ -17,6 +23,11 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+# JWT Secret key (in production, use environment variable)
+SECRET_KEY = "your-secret-key-change-in-production"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 
 @asynccontextmanager
@@ -40,6 +51,10 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Setup templates and static files
+templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # CORS middleware configuration
 app.add_middleware(
@@ -67,6 +82,190 @@ async def global_exception_handler(request, exc):
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "version": "1.0.0"}
+
+
+# ============== Authentication Endpoints ==============
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: dict
+
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    """Create JWT access token."""
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+
+@app.post("/api/auth/login", response_model=LoginResponse, tags=["Authentication"])
+async def login(login_data: LoginRequest, db: Session = Depends(get_db)):
+    """Authenticate user and return JWT token."""
+    try:
+        # Check if user exists
+        user = crud.get_user_by_email(db, email=login_data.email)
+        
+        # For demo purposes, accept any password for existing users
+        # In production, verify hashed password
+        if not user:
+            # Create a demo admin user if no users exist
+            all_users = crud.get_users(db)
+            if len(all_users) == 0:
+                # Create demo admin
+                demo_user = schemas.UserCreate(
+                    name="Admin User",
+                    email="admin@ngo.com",
+                    password="admin123",
+                    role="admin"
+                )
+                user = crud.create_user(db=db, user=demo_user)
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid email or password"
+                )
+        
+        # Create access token
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": user.email, "user_id": user.id, "role": user.role},
+            expires_delta=access_token_expires
+        )
+        
+        return LoginResponse(
+            access_token=access_token,
+            user={"id": user.id, "email": user.email, "name": user.name, "role": user.role}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+# ============== Frontend Routes ==============
+
+@app.get("/", response_class=RedirectResponse, tags=["Frontend"])
+async def root():
+    """Redirect to login page."""
+    return "/login"
+
+
+@app.get("/login", response_class=HTMLResponse, tags=["Frontend"])
+async def login_page(request: Request):
+    """Render login page."""
+    return templates.TemplateResponse("login.html", {"request": request})
+
+
+@app.get("/dashboard", response_class=HTMLResponse, tags=["Frontend"])
+async def dashboard_page(request: Request):
+    """Render dashboard page."""
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {
+            "request": request,
+            "user_name": "Admin",
+            "current_date": datetime.now().strftime("%B %d, %Y")
+        }
+    )
+
+
+@app.get("/members", response_class=HTMLResponse, tags=["Frontend"])
+async def members_page(request: Request):
+    """Render members page."""
+    return templates.TemplateResponse(
+        "members.html",
+        {"request": request, "user_name": "Admin"}
+    )
+
+
+@app.get("/donations", response_class=HTMLResponse, tags=["Frontend"])
+async def donations_page(request: Request):
+    """Render donations page."""
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {
+            "request": request,
+            "user_name": "Admin",
+            "current_date": datetime.now().strftime("%B %d, %Y")
+        }
+    )
+
+
+@app.get("/events", response_class=HTMLResponse, tags=["Frontend"])
+async def events_page(request: Request):
+    """Render events page."""
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {
+            "request": request,
+            "user_name": "Admin",
+            "current_date": datetime.now().strftime("%B %d, %Y")
+        }
+    )
+
+
+@app.get("/projects", response_class=HTMLResponse, tags=["Frontend"])
+async def projects_page(request: Request):
+    """Render projects page."""
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {
+            "request": request,
+            "user_name": "Admin",
+            "current_date": datetime.now().strftime("%B %d, %Y")
+        }
+    )
+
+
+@app.get("/issues", response_class=HTMLResponse, tags=["Frontend"])
+async def issues_page(request: Request):
+    """Render issues page."""
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {
+            "request": request,
+            "user_name": "Admin",
+            "current_date": datetime.now().strftime("%B %d, %Y")
+        }
+    )
+
+
+@app.get("/settings", response_class=HTMLResponse, tags=["Frontend"])
+async def settings_page(request: Request):
+    """Render settings page."""
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {
+            "request": request,
+            "user_name": "Admin",
+            "current_date": datetime.now().strftime("%B %d, %Y")
+        }
+    )
+
+
+@app.get("/profile", response_class=HTMLResponse, tags=["Frontend"])
+async def profile_page(request: Request):
+    """Render profile page."""
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {
+            "request": request,
+            "user_name": "Admin",
+            "current_date": datetime.now().strftime("%B %d, %Y")
+        }
+    )
 
 
 # ============== User Endpoints ==============
